@@ -1,30 +1,29 @@
 --[[
-    CLOCK KEY SYSTEM LIBRARY - ENGINE
+    CLOCK KEY SYSTEM LIBRARY - FULL ENGINE
     Template By Ɛ/Ɛ ʌʌʌʌ/CLOCK
 ]]
 
 local CLOCK_LIBRARY = {}
 
 function CLOCK_LIBRARY:CreateWindow(config)
-    -- Konfigurasi Default & Validasi dari User
-    local HubName = config.Name or "CLOCK HUB"
-    local HubLogo = config.Logo or "rbxassetid://114917214257743"
+    -- Konfigurasi dari User dengan Fallback Default
+    local HubName = config.Name or "CLOCK"
     local DiscordLink = config.Discord or "https://discord.gg/your-link"
+    local HubLogoId = config.Logo or "rbxassetid://114917214257743"
+    local ExactKey = config.Key or "CLOCK-FREE-2026"
     local FolderName = config.Folder or "CLOCK"
-    local CorrectKey = config.Key or "CLOCK-FREE-2026"
     local SupportedGames = config.SupportedGames or {}
-    
-    -- AUTHOR / CREDIT YANG DIKUNCI (TIDAK BISA DIUBAH OLEH USER)
-    local LockedAuthorText = "Template By Ɛ/Ɛ ʌʌʌʌ/CLOCK"
 
-    -- Services
+    -- AUTHOR / CREDIT YANG DIKUNCI (TIDAK BISA DIUBAH)
+    local LOCKED_AUTHOR_TEXT = "Template By Ɛ/Ɛ ʌʌʌʌ/CLOCK"
+
     local CoreGui = game:GetService("CoreGui")
     local TweenService = game:GetService("TweenService")
     local Players = game:GetService("Players")
     local Lighting = game:GetService("Lighting")
     local LocalPlayer = Players.LocalPlayer
 
-    -- Cleanup UI lama jika ada
+    -- Cleanup UI lama
     if CoreGui:FindFirstChild("CLOCKKeySystemUI") then
         CoreGui.CLOCKKeySystemUI:Destroy()
     end
@@ -35,11 +34,16 @@ function CLOCK_LIBRARY:CreateWindow(config)
     Blur.Size = 16
     Blur.Parent = Lighting
 
+    local ICON_VERIFY  = "rbxassetid://124547549008939" 
+    local ICON_DISCORD = "rbxassetid://83278450537116"  
+    local ICON_HWID    = "rbxassetid://80934710831288" 
+
+    local maxAttempts = 5
+    local remainingAttempts = maxAttempts
+
     local KEY_FILE_NAME = FolderName .. "/Save-Key.json"
     local FAILED_KEYS_FILE = FolderName .. "/Failed-Key.json"
     local EXPIRATION_TIME = 24 * 60 * 60
-    local maxAttempts = 5
-    local remainingAttempts = maxAttempts
 
     local currentPlaceId = game.PlaceId
     local isGameSupported = SupportedGames[currentPlaceId] ~= nil
@@ -87,16 +91,23 @@ function CLOCK_LIBRARY:CreateWindow(config)
     local function saveKeySession()
         ensureFolderExists()
         local expiryTime = os.time() + EXPIRATION_TIME
-        if writefile then
+        local hasFileSystem = (writefile ~= nil)
+        local genv = (getgenv and getgenv()) or _G
+
+        if hasFileSystem then
             pcall(function()
                 local data = game:GetService("HttpService"):JSONEncode({ExpiryTime = expiryTime})
                 writefile(KEY_FILE_NAME, data)
             end)
+        else
+            genv.CLOCKKeyVerifiedTime = os.time()
         end
     end
 
     local function isKeyAlreadyFailed(inputKey)
-        if not (writefile and readfile and isfile) then return false end
+        local hasFileSystem = (writefile ~= nil and readfile ~= nil and isfile ~= nil)
+        if not hasFileSystem then return false end
+
         local success, isFileExist = pcall(function() return isfile(FAILED_KEYS_FILE) end)
         if success and isFileExist then
             local readSuccess, content = pcall(function() return readfile(FAILED_KEYS_FILE) end)
@@ -114,7 +125,9 @@ function CLOCK_LIBRARY:CreateWindow(config)
 
     local function recordFailedKey(inputKey)
         ensureFolderExists()
-        if not (writefile and readfile and isfile) then return end
+        local hasFileSystem = (writefile ~= nil and readfile ~= nil and isfile ~= nil)
+        if not hasFileSystem then return end
+
         local failedList = {}
         local success, isFileExist = pcall(function() return isfile(FAILED_KEYS_FILE) end)
         if success and isFileExist then
@@ -124,9 +137,10 @@ function CLOCK_LIBRARY:CreateWindow(config)
                 if jsonSuccess and type(data) == "table" then failedList = data end
             end
         end
-        
+
         local found = false
         for _, key in ipairs(failedList) do if key == inputKey then found = true break end end
+
         if not found then
             table.insert(failedList, inputKey)
             pcall(function()
@@ -141,15 +155,21 @@ function CLOCK_LIBRARY:CreateWindow(config)
         return
     end
 
+    local function removeBlur()
+        if Lighting:FindFirstChild("CLOCKUIBlur") then Lighting.CLOCKUIBlur:Destroy() end
+    end
+
     -- UI Construction
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "CLOCKKeySystemUI"
-    pcall(function() ScreenGui.Parent = CoreGui end)
-    if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+    if not pcall(function() ScreenGui.Parent = CoreGui end) then
+        ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    end
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     ScreenGui.IgnoreGuiInset = true
 
     local MainFrame = Instance.new("Frame")
+    MainFrame.Name = "MainFrame"
     MainFrame.Size = UDim2.new(0, 360, 0, 310)
     MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
     MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
@@ -162,35 +182,96 @@ function CLOCK_LIBRARY:CreateWindow(config)
     MainStroke.Color = Color3.fromRGB(60, 70, 100)
     MainStroke.Thickness = 1.2
 
-    -- BY AUTHOR TEXT (DIKUNCI PAKSA DI SINI)
-    local ByText = Instance.new("TextLabel")
+    local waveTweenInfo = TweenInfo.new(2.5, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1, false)
+
+    local function applyWaveEffect(guiObject, baseColor, shineColor)
+        baseColor = baseColor or Color3.fromRGB(130, 135, 145) 
+        shineColor = shineColor or Color3.fromRGB(235, 240, 250)    
+        if guiObject:IsA("TextLabel") or guiObject:IsA("TextBox") then
+            guiObject.TextColor3 = Color3.fromRGB(255, 255, 255)
+        elseif guiObject:IsA("ImageLabel") then
+            guiObject.ImageColor3 = Color3.fromRGB(255, 255, 255)
+        end
+        local gradient = Instance.new("UIGradient")
+        gradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0.0, baseColor),   
+            ColorSequenceKeypoint.new(0.5, shineColor), 
+            ColorSequenceKeypoint.new(1.0, baseColor)    
+        })
+        gradient.Offset = Vector2.new(-1, 0)
+        gradient.Parent = guiObject
+        TweenService:Create(gradient, waveTweenInfo, {Offset = Vector2.new(1, 0)}):Play()
+    end
+
+    local function applyCalmButtonPulse(btn, darkColor, lightColor)
+        btn.AutoButtonColor = false
+        btn.BackgroundColor3 = darkColor
+        local corner = Instance.new("UICorner", btn)
+        corner.CornerRadius = UDim.new(0, 8)
+        task.spawn(function()
+            local info = TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+            TweenService:Create(btn, info, {BackgroundColor3 = lightColor}):Play()
+        end)
+    end
+
+    local function createBtnWithIcon(btn, text, textSize, iconAssetId)
+        btn.Text = "" 
+        local container = Instance.new("Frame", btn)
+        container.Size = UDim2.new(1, 0, 1, 0)
+        container.BackgroundTransparency = 1
+
+        local layout = Instance.new("UIListLayout", container)
+        layout.FillDirection = Enum.FillDirection.Horizontal
+        layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+        layout.VerticalAlignment = Enum.VerticalAlignment.Center
+        layout.Padding = UDim.new(0, 8)
+
+        if iconAssetId and iconAssetId ~= "" then
+            local icon = Instance.new("ImageLabel", container)
+            icon.Size = UDim2.new(0, textSize + 6, 0, textSize + 6)
+            icon.BackgroundTransparency = 1
+            icon.Image = iconAssetId
+            icon.ScaleType = Enum.ScaleType.Fit
+            applyWaveEffect(icon, Color3.fromRGB(140, 145, 155), Color3.fromRGB(240, 245, 255))
+        end
+
+        local textLabel = Instance.new("TextLabel", container)
+        textLabel.Size = UDim2.new(0, 0, 1, 0)
+        textLabel.AutomaticSize = Enum.AutomaticSize.X
+        textLabel.BackgroundTransparency = 1
+        textLabel.Text = text
+        textLabel.TextSize = textSize
+        textLabel.Font = Enum.Font.GothamBold
+        applyWaveEffect(textLabel, Color3.fromRGB(140, 145, 155), Color3.fromRGB(240, 245, 255))
+    end
+
+    -- UI Elements & Locked Author Text
+    local ByText = Instance.new("TextLabel", MainFrame)
     ByText.Size = UDim2.new(0, 160, 0, 15)
     ByText.Position = UDim2.new(0, 12, 0, 10)
     ByText.BackgroundTransparency = 1
-    ByText.Text = LockedAuthorText -- Selalu menggunakan teks asli buatanmu!
+    ByText.Text = LOCKED_AUTHOR_TEXT -- Dikunci mutlak!
     ByText.TextSize = 9
     ByText.Font = Enum.Font.GothamMedium
     ByText.TextXAlignment = Enum.TextXAlignment.Left
-    ByText.Parent = MainFrame
+    applyWaveEffect(ByText, Color3.fromRGB(130, 145, 175), Color3.fromRGB(255, 255, 255))
 
-    -- Proteksi Tambahan: Jika ada yang mencoba mengganti teks author secara diam-diam
+    -- Anti-tamper author check
     task.spawn(function()
         while task.wait(0.5) do
-            if ByText and ByText.Text ~= LockedAuthorText then
-                ByText.Text = LockedAuthorText
+            if ByText and ByText.Text ~= LOCKED_AUTHOR_TEXT then
+                ByText.Text = LOCKED_AUTHOR_TEXT
             end
         end
     end)
 
-    -- Logo Hub
     local HubLogo = Instance.new("ImageLabel", MainFrame)
     HubLogo.Size = UDim2.new(0, 48, 0, 48)
     HubLogo.Position = UDim2.new(0.5, -24, 0, 22)
     HubLogo.BackgroundColor3 = Color3.fromRGB(18, 22, 30)
-    HubLogo.Image = HubLogo
+    HubLogo.Image = HubLogoId
     Instance.new("UICorner", HubLogo).CornerRadius = UDim.new(1, 0)
 
-    -- Title
     local Title = Instance.new("TextLabel", MainFrame)
     Title.Size = UDim2.new(1, 0, 0, 20)
     Title.Position = UDim2.new(0, 0, 0, 74)
@@ -198,7 +279,7 @@ function CLOCK_LIBRARY:CreateWindow(config)
     Title.Text = string.upper(HubName) .. " — KEY SYSTEM"
     Title.TextSize = 14
     Title.Font = Enum.Font.GothamBold
-    Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    applyWaveEffect(Title, Color3.fromRGB(180, 200, 240), Color3.fromRGB(255, 255, 255))
 
     local DEFAULT_SUBTITLE = "Enter key to continue (Valid for 24h)"
     local Subtitle = Instance.new("TextLabel", MainFrame)
@@ -208,14 +289,19 @@ function CLOCK_LIBRARY:CreateWindow(config)
     Subtitle.Text = DEFAULT_SUBTITLE
     Subtitle.TextSize = 10
     Subtitle.Font = Enum.Font.Gotham
-    Subtitle.TextColor3 = Color3.fromRGB(200, 200, 200)
+    Subtitle.TextXAlignment = Enum.TextXAlignment.Left
+    applyWaveEffect(Subtitle, Color3.fromRGB(140, 155, 185), Color3.fromRGB(255, 255, 255))
 
-    -- Input Box
     local InputContainer = Instance.new("Frame", MainFrame)
     InputContainer.Size = UDim2.new(1, -40, 0, 38)
     InputContainer.Position = UDim2.new(0, 20, 0, 115)
     InputContainer.BackgroundColor3 = Color3.fromRGB(16, 19, 26)
+    InputContainer.BorderSizePixel = 0
     Instance.new("UICorner", InputContainer).CornerRadius = UDim.new(0, 8)
+
+    local InputStroke = Instance.new("UIStroke", InputContainer)
+    InputStroke.Color = Color3.fromRGB(60, 75, 110)
+    InputStroke.Thickness = 1
 
     local KeyInput = Instance.new("TextBox", InputContainer)
     KeyInput.Size = UDim2.new(1, -28, 1, 0)
@@ -229,33 +315,25 @@ function CLOCK_LIBRARY:CreateWindow(config)
     KeyInput.Font = Enum.Font.Gotham
     KeyInput.ClearTextOnFocus = false
 
-    -- Buttons
     local VerifyBtn = Instance.new("TextButton", MainFrame)
     VerifyBtn.Size = UDim2.new(1, -40, 0, 36)
     VerifyBtn.Position = UDim2.new(0, 20, 0, 160)
-    VerifyBtn.Text = "VERIFY KEY"
-    VerifyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    VerifyBtn.Font = Enum.Font.GothamBold
-    VerifyBtn.BackgroundColor3 = Color3.fromRGB(3, 95, 3)
-    Instance.new("UICorner", VerifyBtn).CornerRadius = UDim.new(0, 8)
 
     local DiscordBtn = Instance.new("TextButton", MainFrame)
     DiscordBtn.Size = UDim2.new(0.5, -24, 0, 32)
     DiscordBtn.Position = UDim2.new(0, 20, 0, 202)
-    DiscordBtn.Text = "JOIN DISCORD"
-    DiscordBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    DiscordBtn.Font = Enum.Font.GothamBold
-    DiscordBtn.BackgroundColor3 = Color3.fromRGB(12, 18, 120)
-    Instance.new("UICorner", DiscordBtn).CornerRadius = UDim.new(0, 8)
 
     local CopyHwidBtn = Instance.new("TextButton", MainFrame)
     CopyHwidBtn.Size = UDim2.new(0.5, -24, 0, 32)
     CopyHwidBtn.Position = UDim2.new(0.5, 4, 0, 202)
-    CopyHwidBtn.Text = "COPY HWID"
-    CopyHwidBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    CopyHwidBtn.Font = Enum.Font.GothamBold
-    CopyHwidBtn.BackgroundColor3 = Color3.fromRGB(38, 42, 58)
-    Instance.new("UICorner", CopyHwidBtn).CornerRadius = UDim.new(0, 8)
+
+    applyCalmButtonPulse(VerifyBtn, Color3.fromRGB(3, 95, 3), Color3.fromRGB(5, 140, 5))
+    applyCalmButtonPulse(DiscordBtn, Color3.fromRGB(12, 18, 120), Color3.fromRGB(22, 32, 175))
+    applyCalmButtonPulse(CopyHwidBtn, Color3.fromRGB(38, 42, 58), Color3.fromRGB(58, 64, 88))
+
+    createBtnWithIcon(VerifyBtn, "VERIFY KEY", 12, ICON_VERIFY)
+    createBtnWithIcon(DiscordBtn, "JOIN DISCORD", 11, ICON_DISCORD)
+    createBtnWithIcon(CopyHwidBtn, "COPY HWID", 11, ICON_HWID)
 
     local AttemptsText = Instance.new("TextLabel", MainFrame)
     AttemptsText.Size = UDim2.new(1, 0, 0, 16)
@@ -264,7 +342,37 @@ function CLOCK_LIBRARY:CreateWindow(config)
     AttemptsText.Text = "Attempts remaining: " .. remainingAttempts
     AttemptsText.TextSize = 10
     AttemptsText.Font = Enum.Font.Gotham
-    AttemptsText.TextColor3 = Color3.fromRGB(180, 180, 180)
+    applyWaveEffect(AttemptsText, Color3.fromRGB(150, 165, 195), Color3.fromRGB(255, 255, 255))
+
+    -- Footer Profile & Status
+    local UserAvatar = Instance.new("ImageLabel", MainFrame)
+    UserAvatar.Size = UDim2.new(0, 26, 0, 26)
+    UserAvatar.Position = UDim2.new(0, 15, 1, -34)
+    UserAvatar.BackgroundColor3 = Color3.fromRGB(18, 22, 30)
+    Instance.new("UICorner", UserAvatar).CornerRadius = UDim.new(1, 0)
+    pcall(function()
+        UserAvatar.Image = Players:GetUserThumbnailAsync(LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420)
+    end)
+
+    local UserNameLabel = Instance.new("TextLabel", MainFrame)
+    UserNameLabel.Size = UDim2.new(0, 150, 0, 26)
+    UserNameLabel.Position = UDim2.new(0, 48, 1, -34)
+    UserNameLabel.BackgroundTransparency = 1
+    UserNameLabel.Text = "@" .. LocalPlayer.Name
+    UserNameLabel.TextSize = 10
+    UserNameLabel.Font = Enum.Font.GothamMedium
+    UserNameLabel.TextXAlignment = Enum.TextXAlignment.Left
+    applyWaveEffect(UserNameLabel, Color3.fromRGB(150, 165, 195), Color3.fromRGB(255, 255, 255))
+
+    local GameStatusLabel = Instance.new("TextLabel", MainFrame)
+    GameStatusLabel.Size = UDim2.new(0, 140, 0, 26)
+    GameStatusLabel.Position = UDim2.new(1, -155, 1, -34)
+    GameStatusLabel.BackgroundTransparency = 1
+    GameStatusLabel.Text = isGameSupported and "Game: Supported" or "Game: Unsupported"
+    GameStatusLabel.TextSize = 10
+    GameStatusLabel.Font = Enum.Font.GothamBold
+    GameStatusLabel.TextXAlignment = Enum.TextXAlignment.Right
+    applyWaveEffect(GameStatusLabel, isGameSupported and Color3.fromRGB(80, 220, 110) or Color3.fromRGB(255, 90, 90), Color3.fromRGB(255, 255, 255))
 
     -- Button Actions
     CopyHwidBtn.MouseButton1Click:Connect(function()
@@ -300,11 +408,15 @@ function CLOCK_LIBRARY:CreateWindow(config)
         Subtitle.Text = "Connecting to server..."
         task.wait(0.8)
 
-        if inputKey == CorrectKey then
+        if inputKey == ExactKey then
             Subtitle.Text = "Key Verified!"
             saveKeySession()
             task.wait(1)
-            if Blur then Blur:Destroy() end
+            if Blur then
+                TweenService:Create(Blur, TweenInfo.new(0.4), {Size = 0}):Play()
+                task.wait(0.4)
+                removeBlur()
+            end
             ScreenGui:Destroy()
             loadMainScript()
         else
@@ -315,6 +427,8 @@ function CLOCK_LIBRARY:CreateWindow(config)
 
             if remainingAttempts <= 0 then
                 VerifyBtn.Active = false
+                Subtitle.Text = "Too many failed attempts!"
+                task.wait(0.8)
                 LocalPlayer:Kick("[" .. HubName .. " SECURITY] Too many failed key attempts.")
             else
                 task.wait(1.5)
