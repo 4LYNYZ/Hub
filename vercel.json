@@ -1,5 +1,0 @@
-{
-  "rewrites": [
-    { "source": "/4LYNYZ", "destination": "/api/main.js" }
-  ]
-}
