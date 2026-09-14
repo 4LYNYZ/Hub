@@ -1,5 +1,5 @@
 {
   "rewrites": [
-    { "source": "/Monitor-Stats", "destination": "/api/main.lua" }
+    { "source": "/4LYNYZ", "destination": "/api/main.js" }
   ]
 }
